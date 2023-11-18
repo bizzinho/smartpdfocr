@@ -1,7 +1,43 @@
+import re
 import easyocr
 import pandas as pd
 from pdf2image import convert_from_path  # requires poppler
 from PIL import Image, ImageDraw, ImageFont
+
+reader = easyocr.Reader(["de"])
+
+modelCodes = pd.read_csv("carcodes.csv")
+# pat = r"( |^)HES[ ]?[0-9A-Z]{4}[ ]?[0-9A-Z]{10}($| )"
+pat = r"( |^)\d{3}[.]\d{3}[.]\d{3}($| )"
+
+
+def analyzeOcrOutput(bound, pageNo):
+    # search for the fahrgestellnr, extract, map to Typengenehmigung
+    tg = "UNKNOWN"
+    id_num = "000.000.000"
+    tg_loc = (0,)
+    tg_owner_loc = (0,)
+
+    for box in bound:
+        # find_vin = re.search(pat, box[1])
+        find_sn = re.search(pat, box[1])
+        if find_sn is not None:
+            id_num = find_sn.group(0).replace(" ", "")
+            # id_num = find_vin.group(0).replace(" ", "")
+            if id_num not in modelCodes["SN"].to_list():
+                print(
+                    f"WARNING: Could not map Stammnummer {id_num} to any TG on page {pageNo}"
+                )
+            else:
+                tg = modelCodes.loc[modelCodes["SN"] == id_num, "TG"].values[0]
+
+        elif re.search("Typengenehmigung( |$)", box[1]) is not None:
+            tg_loc = box[0]  # (tl, tr, br, bl)
+
+        elif re.search("Code du titulaire", box[1]) is not None:
+            tg_owner_loc = box[0]  # (tl, tr, br, bl)
+
+    return [id_num, tg, tg_loc, tg_owner_loc]
 
 
 def findFontSize(ID, tg_width):
@@ -12,14 +48,8 @@ def findFontSize(ID, tg_width):
         tl = ID.textlength("TESTTEST", font=font)
         fontsize = int(fontsize * 1.05)
 
-    return fontsize
+    return font
 
-
-reader = easyocr.Reader(["de"])
-
-modelCodes = pd.read_csv("carcodes.csv")
-# pat = r"( |^)HES[ ]?[0-9A-Z]{4}[ ]?[0-9A-Z]{10}($| )"
-pat = r"( |^)\d{3}[.]\d{3}[.]\d{3}($| )"
 
 scans = "examples.pdf"
 
@@ -29,53 +59,30 @@ no_of_pages = len(pages)
 
 infos = pd.DataFrame(columns=["page", "id", "tg", "tg_loc", "tg_owner_loc"])
 infos.page = range(1, no_of_pages + 1)
+infos.set_index("page", inplace=True)
 
 images = []
 empty_images = []
-fontsize = None
+font = None
 
-for i, page in enumerate(pages):
-    print(f"Working on page {i+1}")
+for i, page in enumerate(pages, 1):
+    print(f"Working on page {i}")
     # convert first to jpg
-    page.save("scan.jpg")
+    page.save(f"scan{i}.jpg")
 
     # read the image
-    bound = reader.readtext("scan.jpg")
+    bound = reader.readtext(f"scan{i}.jpg")
 
-    # search for the fahrgestellnr, extract, map to Typengenehmigung
-    for box in bound:
-        # find_vin = re.search(pat, box[1])
-        find_sn = re.search(pat, box[1])
-        if find_sn is not None:
-            id_num = find_sn.group(0).replace(" ", "")
-            # id_num = find_vin.group(0).replace(" ", "")
-            if id_num not in modelCodes["SN"].to_list():
-                print(
-                    f"WARNING: Could not map Stammnummer {id_num} to any TG on page {i+1}"
-                )
-                tg = "UNKNOWN"
-            else:
-                tg = modelCodes.loc[modelCodes["SN"] == id_num, "TG"].values[0]
-                infos.loc[i, "tg"] = tg
-            infos.loc[i, "id"] = id_num
+    info = analyzeOcrOutput(bound, i)
+    infos.loc[i] = info
 
-        find_tg = re.search("Typengenehmigung( |$)", box[1])
-        if find_tg is not None:
-            tg_loc = box[0]  # (tl, tr, br, bl)
-            infos.loc[i, "tg_loc"] = ((tg_loc),)
-
-        find_tg_owner = re.search("Code du titulaire", box[1])
-        if find_tg_owner is not None:
-            tg_owner_loc = box[0]  # (tl, tr, br, bl)
-            infos.loc[i, "tg_owner_loc"] = ((tg_owner_loc),)
-
-    img = Image.open("scan.jpg")
+    img = Image.open(f"scan{i}.jpg")
     tg_width = tg_loc[1][0] - tg_loc[0][0]
     ID = ImageDraw.Draw(img)
 
-    if fontsize is None:
+    if font is None:
         # do this only the first time, the other pages should match
-        fontsize = findFontSize(ID, tg_width)
+        font = findFontSize(ID, tg_width)
 
     ID.text((tg_loc[1][0] + int(tg_width / 2), tg_loc[0][1]), tg, (0, 0, 0), font=font)
     ID.text(
