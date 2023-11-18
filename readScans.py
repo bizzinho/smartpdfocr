@@ -53,13 +53,30 @@ def findFontSize(ID, tg_width):
     return font
 
 
-def readScans(filename="scans.pdf", output="out.pdf", verbose=True, debug=False):
+def fillForm(ID, tg, tg_loc, tg_owner_loc, tg_width, font, rgb=False):
+    if rgb:
+        black = (0, 0, 0)
+    else:
+        black = 0
+
+    ID.text((tg_loc[1][0] + int(tg_width / 2), tg_loc[0][1]), tg, black, font=font)
+    ID.text(
+        (tg_owner_loc[1][0] + tg_width * 0.75, tg_owner_loc[0][1]),
+        "8236",
+        (0, 0, 0),
+        font=font,
+    )
+
+
+def readScans(
+    filename="scans.pdf", start=1, output="out.pdf", verbose=True, debug=False
+):
     if verbose and debug:
         print("==========\nDEBUG MODE", end="\n==========\n")
 
     # read in pdf
     if verbose:
-        print("Reading pdf...", end="")
+        print(f"Reading {filename}...", end="")
     pages = convert_from_path(filename, 800)  # second input is DPI
     if verbose:
         print("done!")
@@ -93,37 +110,30 @@ def readScans(filename="scans.pdf", output="out.pdf", verbose=True, debug=False)
         info = analyzeOcrOutput(bound, i)
         infos.loc[i] = info
 
+        if (info[1].lower() == "unknown") or (tg_loc[0] == 0) or (tg_owner_loc[0] == 0):
+            # something went wrong, initiate failsafe
+            infos.to_csv("failsafe.csv")
+
         _, tg, tg_loc, tg_owner_loc = info
 
-        img = Image.open(f"scan{i}.jpg")
         tg_width = tg_loc[1][0] - tg_loc[0][0]
-        ID = ImageDraw.Draw(img)
 
         if font is None:
+            img = Image.open(f"scan{i}.jpg")
             # do this only the first time, the other pages should match
             font = findFontSize(ID, tg_width)
 
-        ID.text(
-            (tg_loc[1][0] + int(tg_width / 2), tg_loc[0][1]), tg, (0, 0, 0), font=font
-        )
-        ID.text(
-            (tg_owner_loc[1][0] + tg_width * 0.75, tg_owner_loc[0][1]),
-            "8236",
-            (0, 0, 0),
-            font=font,
-        )
-
-        images.append(img)
-        if debug:
-            img.show()
-
         txt_img = Image.new("1", img.size, 1)
         ID_text = ImageDraw.Draw(txt_img)
-        ID_text.text((tg_loc[1][0] + int(tg_width / 2), tg_loc[0][1]), tg, 0, font=font)
-        ID_text.text(
-            (tg_owner_loc[1][0] + tg_width, tg_owner_loc[0][1]), "8236", 0, font=font
-        )
+        fillForm(ID_text, tg, tg_loc, tg_owner_loc, tg_width, font)
         empty_images.append(txt_img)
+
+        if debug:
+            img = Image.open(f"scan{i}.jpg")
+            ID = ImageDraw.Draw(img)
+            fillForm(ID, tg, tg_loc, tg_owner_loc, tg_width, font, rgb=True)
+            img.show()
+            images.append(img)
 
     if debug:
         images[0].save("out_debug.pdf", save_all=True, append_images=images[1:])
@@ -135,7 +145,7 @@ def readScans(filename="scans.pdf", output="out.pdf", verbose=True, debug=False)
     empty_images[0].save("out.pdf", save_all=True, append_images=empty_images[1:])
 
     if verbose:
-        print(f"Done. Output is stored in {output}.")
+        print(f"Done. Output is stored in '{output}'.")
 
 
 if __name__ == "__main__":
@@ -147,7 +157,8 @@ if __name__ == "__main__":
     )
 
     parser.add_argument("-f", "--filename", default="scans.pdf")
+    parser.add_argument("-s", "--start", default=1)
     parser.add_argument("-v", "--verbose", action="store_false")
     parser.add_argument("-d", "--debug", action="store_true")
     args = parser.parse_args()
-    readScans(filename=args.filename, verbose=args.verbose, debug=args.debug)
+    readScans(filename=args.filename, start=1, verbose=args.verbose, debug=args.debug)
