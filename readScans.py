@@ -10,10 +10,21 @@ reader = easyocr.Reader(["de"])
 
 modelCodes = pd.read_csv("carcodes.csv")
 # pat = r"( |^)HES[ ]?[0-9A-Z]{4}[ ]?[0-9A-Z]{10}($| )"
+
+# pattern for Stammnummer
 pat = r"( |^)\d{3}[.]\d{3}[.]\d{3}($| )"
 
 
-def analyzeOcrOutput(bound, pageNo):
+def analyzeOcrOutput(bound: list, pageNo: int) -> list:
+    """Parsing the OCR output.
+
+    Args:
+        bound (list): The easyocr output list.
+        pageNo (int): The current page numnber.
+
+    Returns:
+        list: The parsed information.
+    """
     # search for the fahrgestellnr, extract, map to Typengenehmigung
     tg = "UNKNOWN"
     id_num = "000.000.000"
@@ -42,7 +53,16 @@ def analyzeOcrOutput(bound, pageNo):
     return [id_num, tg, tg_loc, tg_owner_loc]
 
 
-def findFontSize(ID, tg_width):
+def findFontSize(ID: ImageDraw.Draw, tg_width: int) -> ImageFont.FreeTypeFont:
+    """Determine an appropriate font size based on reference.
+
+    Args:
+        ID (ImageDraw.Draw): The draw object to use.
+        tg_width (int): The width of the TG text - our size reference.
+
+    Returns:
+        ImageFont.FreeTypeFont: The font object defining the font type and size.
+    """
     fontsize = 20
     tl = 0
     while tl < tg_width * 1.5:
@@ -53,7 +73,26 @@ def findFontSize(ID, tg_width):
     return font
 
 
-def fillForm(ID, tg, tg_loc, tg_owner_loc, tg_width, font, rgb=False):
+def fillForm(
+    ID: ImageDraw.Draw,
+    tg: str,
+    tg_loc: list,
+    tg_owner_loc: list,
+    tg_width: int,
+    font: ImageFont.FreeTypeFont,
+    rgb: bool = False,
+):
+    """Fill out the form.
+
+    Args:
+        ID (ImageDraw.Draw): The draw object to use.
+        tg (str): The Typengenehmigung (TG) to fill in.
+        tg_loc (list): The location for the TG.
+        tg_owner_loc (list): The location for the TG owner name.
+        tg_width (int): The width of the TG text - our size reference.
+        font (ImageFont.FreeTypeFont): The font object defining the font type and size.
+        rgb (bool, optional): Whether this is a RGB image. Defaults to False.
+    """
     if rgb:
         black = (0, 0, 0)
     else:
@@ -69,8 +108,28 @@ def fillForm(ID, tg, tg_loc, tg_owner_loc, tg_width, font, rgb=False):
 
 
 def readScans(
-    filename="scans.pdf", start=1, output="out.pdf", verbose=True, debug=False
+    filename: str = "scans.pdf",
+    start: int = 1,
+    output: str = "out.pdf",
+    verbose: bool = True,
+    debug: bool = False,
 ):
+    """Read the scans and store a pdf to print that fills out the forms.
+
+    Args:
+        filename (str, optional): The name of the files containing the scans.
+            Defaults to "scans.pdf".
+        start (int, optional): Start page. To use when previous run fails.
+            Defaults to 1.
+        output (str, optional): Name of output file.
+            Defaults to "out.pdf".
+        verbose (bool, optional): Whether to be verbose. Defaults to True.
+        debug (bool, optional): Whether to store debug artifacts. Defaults to False.
+
+    Raises:
+        ValueError: Start > 1 and no failsafe available.
+        ValueError: Issue during parsing.
+    """
     if verbose and debug:
         print("==========\nDEBUG MODE", end="\n==========\n")
 
@@ -118,6 +177,7 @@ def readScans(
         else:
             if verbose:
                 print(f"Loading info for page {i} from failsafe.")
+            info = infos.loc[i]
 
         _, tg, tg_loc, tg_owner_loc = infos.loc[i]
 
@@ -172,6 +232,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument("-f", "--filename", default="scans.pdf")
+    parser.add_argument("-o", "--output", default="out.pdf")
     parser.add_argument("-s", "--start", default=1, type=int)
     parser.add_argument("-v", "--verbose", action="store_false")
     parser.add_argument("-d", "--debug", action="store_true")
