@@ -3,6 +3,17 @@ import pandas as pd
 from pdf2image import convert_from_path # requires poppler
 from PIL import Image, ImageDraw, ImageFont
 
+def findFontSize(ID, tg_width):
+    fontsize = 20
+    tl = 0
+    while tl < tg_width*1.5:
+        font = ImageFont.truetype("arial.ttf", fontsize)
+        tl = ID.textlength("TESTTEST", font = font)
+        fontsize = int(fontsize*1.05)
+
+    return fontsize
+
+
 reader = easyocr.Reader(["de"])
 
 modelCodes = pd.read_csv("carcodes.csv")
@@ -20,6 +31,7 @@ infos.page = range(1, no_of_pages+1)
 
 images = []
 empty_images = []
+fontsize = None
 
 for i, page in enumerate(pages):
     print(f"Working on page {i+1}")
@@ -56,13 +68,11 @@ for i, page in enumerate(pages):
 
     img = Image.open("scan.jpg")
     tg_width = tg_loc[1][0] - tg_loc[0][0]
-    fontsize = 50
     ID = ImageDraw.Draw(img)
-    tl = 0
-    while tl < tg_width*1.5:
-        font = ImageFont.truetype("arial.ttf", fontsize)
-        tl = ID.textlength("TESTTEST", font = font)
-        fontsize = int(fontsize*1.05)
+
+    if fontsize is None:
+        # do this only the first time, the other pages should match
+        fontsize = findFontSize(ID, tg_width)
     
     ID.text((tg_loc[1][0]+int(tg_width/2), tg_loc[0][1]), tg, (0, 0, 0), font=font)
     ID.text((tg_owner_loc[1][0]+tg_width*0.75, tg_owner_loc[0][1]), "8236", (0, 0, 0), font=font)
