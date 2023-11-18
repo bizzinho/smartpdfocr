@@ -63,7 +63,7 @@ def fillForm(ID, tg, tg_loc, tg_owner_loc, tg_width, font, rgb=False):
     ID.text(
         (tg_owner_loc[1][0] + tg_width * 0.75, tg_owner_loc[0][1]),
         "8236",
-        (0, 0, 0),
+        black,
         font=font,
     )
 
@@ -76,15 +76,21 @@ def readScans(
 
     # read in pdf
     if verbose:
-        print(f"Reading {filename}...", end="")
+        print(f"Reading {filename}...", flush=True, end="")
     pages = convert_from_path(filename, 800)  # second input is DPI
     if verbose:
         print("done!")
     no_of_pages = len(pages)
 
-    infos = pd.DataFrame(columns=["page", "id", "tg", "tg_loc", "tg_owner_loc"])
-    infos.page = range(1, no_of_pages + 1)
-    infos.set_index("page", inplace=True)
+    if start > 1:
+        if "failsafe.csv" in os.listdir():
+            infos = pd.read_csv("failsafe.csv", index_col=0)
+        else:
+            raise ValueError("No 'failsafe.csv' available to do start>1.")
+    else:
+        infos = pd.DataFrame(columns=["page", "id", "tg", "tg_loc", "tg_owner_loc"])
+        infos.page = range(1, no_of_pages + 1)
+        infos.set_index("page", inplace=True)
 
     images = []
     empty_images = []
@@ -95,35 +101,41 @@ def readScans(
             print(f"Working on page {i}")
         # convert first to jpg
         if verbose:
-            print("- Saving as jpg...", end="")
+            print("- Saving as jpg...", flush=True, end="")
         page.save(f"scan{i}.jpg")
         if verbose:
             print("done!")
 
         # read the image
-        if verbose:
-            print("- Performing OCR...", end="")
-        bound = reader.readtext(f"scan{i}.jpg")
-        if verbose:
-            print("done!")
+        if i >= start:
+            if verbose:
+                print("- Performing OCR...", flush=True, end="")
+            bound = reader.readtext(f"scan{i}.jpg")
+            info = analyzeOcrOutput(bound, i)
+            if verbose:
+                print("done!")
+            infos.loc[i] = info
+        else:
+            if verbose:
+                print(f"Loading info for page {i} from failsafe.")
 
-        info = analyzeOcrOutput(bound, i)
-        infos.loc[i] = info
+        _, tg, tg_loc, tg_owner_loc = infos.loc[i]
 
         if (info[1].lower() == "unknown") or (tg_loc[0] == 0) or (tg_owner_loc[0] == 0):
             # something went wrong, initiate failsafe
             infos.to_csv("failsafe.csv")
-
-        _, tg, tg_loc, tg_owner_loc = info
+            raise ValueError(f"Issue with page {i}, cannot proceed.")
 
         tg_width = tg_loc[1][0] - tg_loc[0][0]
 
         if font is None:
             img = Image.open(f"scan{i}.jpg")
+            ID = ImageDraw.Draw(img)
             # do this only the first time, the other pages should match
             font = findFontSize(ID, tg_width)
+            imgSize = img.size
 
-        txt_img = Image.new("1", img.size, 1)
+        txt_img = Image.new("1", imgSize, 1)
         ID_text = ImageDraw.Draw(txt_img)
         fillForm(ID_text, tg, tg_loc, tg_owner_loc, tg_width, font)
         empty_images.append(txt_img)
@@ -142,6 +154,9 @@ def readScans(
         for i in range(1, no_of_pages + 1):
             os.remove(f"scan{i}.jpg")
 
+        if "failsafe.csv" in os.listdir():
+            os.remove("failsafe.csv")
+
     empty_images[0].save("out.pdf", save_all=True, append_images=empty_images[1:])
 
     if verbose:
@@ -157,8 +172,10 @@ if __name__ == "__main__":
     )
 
     parser.add_argument("-f", "--filename", default="scans.pdf")
-    parser.add_argument("-s", "--start", default=1)
+    parser.add_argument("-s", "--start", default=1, type=int)
     parser.add_argument("-v", "--verbose", action="store_false")
     parser.add_argument("-d", "--debug", action="store_true")
     args = parser.parse_args()
-    readScans(filename=args.filename, start=1, verbose=args.verbose, debug=args.debug)
+    readScans(
+        filename=args.filename, start=args.start, verbose=args.verbose, debug=args.debug
+    )
