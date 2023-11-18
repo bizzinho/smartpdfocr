@@ -1,4 +1,5 @@
 import re
+import os
 import easyocr
 import pandas as pd
 from pdf2image import convert_from_path  # requires poppler
@@ -53,10 +54,15 @@ def findFontSize(ID, tg_width):
 
 
 def readScans(filename="scans.pdf", output="out.pdf", verbose=True, debug=False):
-    scans = "scans.pdf"
+    if verbose and debug:
+        print("==========\nDEBUG MODE", end="\n==========\n")
 
     # read in pdf
-    pages = convert_from_path(scans, 800)  # second input is DPI
+    if verbose:
+        print("Reading pdf...", end="")
+    pages = convert_from_path(filename, 800)  # second input is DPI
+    if verbose:
+        print("done!")
     no_of_pages = len(pages)
 
     infos = pd.DataFrame(columns=["page", "id", "tg", "tg_loc", "tg_owner_loc"])
@@ -71,10 +77,18 @@ def readScans(filename="scans.pdf", output="out.pdf", verbose=True, debug=False)
         if verbose:
             print(f"Working on page {i}")
         # convert first to jpg
+        if verbose:
+            print("- Saving as jpg...", end="")
         page.save(f"scan{i}.jpg")
+        if verbose:
+            print("done!")
 
         # read the image
+        if verbose:
+            print("- Performing OCR...", end="")
         bound = reader.readtext(f"scan{i}.jpg")
+        if verbose:
+            print("done!")
 
         info = analyzeOcrOutput(bound, i)
         infos.loc[i] = info
@@ -113,6 +127,11 @@ def readScans(filename="scans.pdf", output="out.pdf", verbose=True, debug=False)
 
     if debug:
         images[0].save("out_debug.pdf", save_all=True, append_images=images[1:])
+    else:
+        # clean up
+        for i in range(1, no_of_pages + 1):
+            os.remove(f"scan{i}.jpg")
+
     empty_images[0].save("out.pdf", save_all=True, append_images=empty_images[1:])
 
     if verbose:
@@ -131,4 +150,4 @@ if __name__ == "__main__":
     parser.add_argument("-v", "--verbose", action="store_false")
     parser.add_argument("-d", "--debug", action="store_true")
     args = parser.parse_args()
-    readScans(filename=args.filename, debug=args.debug)
+    readScans(filename=args.filename, verbose=args.verbose, debug=args.debug)
